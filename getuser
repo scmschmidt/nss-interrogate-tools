@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+#
+# The script checks if a user is in a given database (NSS).
+# 
+# It mounts an individual nsswitch.conf in a shell with an unshared mount namespace,
+# where only the given NSS module is listed for 'passwd:'
+#
+#   ToDo:   - Non existing NSS modules are reported as a user not found.
+#
+#   Changelog:  03.07.2021  v0.1    Sören Schmidt       - First creation
+#               03.07.2021  v0.2    Sören Schmidt       - Don't use network namespaces anymore, but
+#                                                         use a shell with an unshared mount namespace.
+set -u
+
+version='0.2'
+
+LOCAL_NSSWITCH=$(mktemp)
+
+function cleanup() {
+    [ -e "${LOCAL_NSSWITCH}" ] && rm -f "${LOCAL_NSSWITCH}"
+}
+
+# Check parameters.
+if [ $# -ne 2 ] ; then
+    echo -e "Usage: ${0##*/} USERNAME NSSMODULE\nv${version}\n"
+    echo -e "    USERNAME   Name of the user\n    NSSMODULE  Name of the NSS module to ask\n" 
+    exit 0    
+fi
+user="${1}"
+nss_module="${2}"
+
+# Set cleanup routine.
+trap cleanup EXIT
+
+# Create modified copy of nsswitch.conf.
+sed "/^passwd:/s/.*/passwd: ${nss_module}/" /etc/nsswitch.conf > "${LOCAL_NSSWITCH}"
+
+# Ask for the user and terminate with the exit code of 'id'.
+unshare -m bash <( echo "mount --bind ${LOCAL_NSSWITCH} /etc/nsswitch.conf && id ${user}" )
+exit $?
